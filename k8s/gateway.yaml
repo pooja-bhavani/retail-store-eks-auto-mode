@@ -1,0 +1,60 @@
+apiVersion: gateway.networking.k8s.io/v1
+kind: GatewayClass
+metadata:
+  name: eks-auto-alb
+spec:
+  controllerName: eks.amazonaws.com/gateway-alb
+---
+apiVersion: gateway.k8s.aws/v1
+kind: LoadBalancerConfiguration
+metadata:
+  name: internet-facing
+  namespace: retail-store
+spec:
+  scheme: internet-facing
+---
+apiVersion: gateway.networking.k8s.io/v1
+kind: Gateway
+metadata:
+  name: retail-gateway
+  namespace: retail-store
+spec:
+  gatewayClassName: eks-auto-alb
+  infrastructure:
+    parametersRef:
+      group: gateway.k8s.aws
+      kind: LoadBalancerConfiguration
+      name: internet-facing
+  listeners:
+    - name: http
+      protocol: HTTP
+      port: 80
+---
+apiVersion: gateway.k8s.aws/v1
+kind: TargetGroupConfiguration
+metadata:
+  name: retail-store-ui
+  namespace: retail-store
+spec:
+  targetReference:
+    name: retail-store-ui
+  defaultConfiguration:
+    targetType: ip
+---
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: retail-store-ui
+  namespace: retail-store
+spec:
+  parentRefs:
+    - name: retail-gateway
+      sectionName: http
+  rules:
+    - matches:
+        - path:
+            type: PathPrefix
+            value: /
+      backendRefs:
+        - name: retail-store-ui
+          port: 80
