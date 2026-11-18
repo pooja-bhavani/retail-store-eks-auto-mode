@@ -389,6 +389,6 @@ DevOps & Cloud Engineer | AWS Community Builder – Containers
 
 - [GitHub](https://github.com/pooja-bhavani)
 - [LinkedIn](https://www.linkedin.com/in/poojabhavani08-devops/)
-- [Hashnode](https://hashnode.com/@Poojabhavani08)
+- [AWS Builder Center]([https://builder.aws.com/community/@poojabhavani09))
 
 If you find this project useful, consider giving the repository a ⭐.
