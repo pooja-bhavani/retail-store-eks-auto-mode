@@ -9,6 +9,8 @@
   <a href="https://github.com/pooja-bhavani/retail-store-sample-app">Previous Implementation</a> 
 </p>
 
+<img width="1927" height="1013" alt="Screenshot 2026-11-12 at 8 28 51 PM" src="https://github.com/user-attachments/assets/550a600a-1cc1-4c38-9305-f1462d1848c0" />
+
 ---
 
 ## Project Overview
@@ -132,102 +134,132 @@ Before starting, make sure you have:
 Use an appropriately permissioned IAM identity. Avoid using AWS root credentials for deployment.
 
 ## Deployment Overview
+1. Install Terraform and kubectl
 
-### 1. Clone the repository
+CloudShell doesn't include Terraform. Install it and kubectl into /tmp:
 
 ```bash
-git clone https://github.com/pooja-bhavani/retail-store-eks-auto-mode.git
+mkdir -p /tmp/bin && export PATH=/tmp/bin:$PATH
+cd /tmp
+curl -sLO https://releases.hashicorp.com/terraform/1.9.8/terraform_1.9.8_linux_amd64.zip
+unzip -oq terraform_1.9.8_linux_amd64.zip -d /tmp/bin
+curl -sLO "https://dl.k8s.io/release/$(curl -sL https://dl.k8s.io/release/stable.txt)/bin/linux/amd64/kubectl"
+chmod +x kubectl && mv kubectl /tmp/bin/
+export TF_DATA_DIR=/tmp/tfdata
+terraform version
+```
+CloudShell's home folder is small and /tmp is wiped when the session restarts. If CloudShell restarts, run this step again. Don't delete terraform/terraform.tfstate.
 
+2. Clone this repo
+```bash
+cd ~
+git clone https://github.com/pooja-bhavani/retail-store-eks-auto-mode.git
 cd retail-store-eks-auto-mode
 ```
 
-### 2. Configure AWS
+3. Create the VPC and the cluster
+
+Pick a Kubernetes version that is in standard support right now:
 
 ```bash
-aws configure
-aws sts get-caller-identity
+aws eks describe-cluster-versions --region ap-south-1 \
+  --query 'clusterVersions[?status==`STANDARD_SUPPORT`].clusterVersion'
 ```
 
-Verify that your AWS CLI is using the intended account and region.
-
-### 3. Provision infrastructure with Terraform
+Put the newest one in terraform/terraform.tfvars (this example uses 1.37):
 
 ```bash
 cd terraform
-
+echo 'kubernetes_version = "1.37"' > terraform.tfvars
 terraform init
-terraform fmt -recursive
-terraform validate
-terraform plan
 terraform apply
 ```
 
-Review the Terraform plan before applying it.
+Type yes when asked. The apply takes around 13 minutes.
 
-### 4. Connect to Amazon EKS
-
-Update the kubeconfig using the cluster name created by Terraform:
-
+4. Connect to the cluster
 ```bash
-aws eks update-kubeconfig \
-  --region ap-south-1 \
-  --name <YOUR_EKS_CLUSTER_NAME>
-```
-
-Verify cluster access:
-
-```bash
+aws eks update-kubeconfig --region ap-south-1 --name retail-store
 kubectl get nodes
-kubectl get namespaces
 ```
 
-EKS Auto Mode provisions compute as workloads require it, so nodes may appear as workloads are scheduled.
+No resources found is normal. Auto Mode only creates nodes when something needs to run.
 
-### 5. Deploy applications using Argo CD
-
-Install and configure Argo CD according to the deployment configuration in this repository.
-
-Verify the Argo CD applications:
-
+5. Turn on Gateway API
 ```bash
-kubectl get applications -n argocd
+aws eks update-cluster-config --region ap-south-1 --name retail-store \
+  --kubernetes-network-config '{"elasticLoadBalancing":{"enabled":true,"gatewayApi":{"crds":{"managed":true}}}}'
+```
+```
+aws eks wait cluster-active --region ap-south-1 --name retail-store
+kubectl api-resources --api-group=gateway.k8s.aws
 ```
 
-Check application health and synchronization:
+6. Install Argo CD
+```bash
+kubectl create namespace argocd
+kubectl apply -n argocd --server-side --force-conflicts \
+  -f https://raw.githubusercontent.com/argoproj/argo-cd/stable/manifests/install.yaml
+kubectl wait --for=condition=available deployment --all -n argocd --timeout=600s
+kubectl get nodes
+```
+A node now appears. Auto Mode created it because the Argo CD pods needed somewhere to run.
+
+7. Deploy the five services
+
+From the repo root (cd ~/retail-store-eks-auto-mode):
 
 ```bash
-kubectl get pods -n retail-store
-kubectl get applications -n argocd
+kubectl apply -f k8s/argocd-apps.yaml
+kubectl get applications -n argocd -w
 ```
 
-### 6. Configure external access with Gateway API
+Wait until all five show Synced and Healthy, then press Ctrl+C.
 
-The application uses Kubernetes Gateway API rather than the previous NGINX Ingress-based approach.
-
-Apply the Gateway API resources according to the manifests in `k8s/`:
-
+8. Put the store on the internet
 ```bash
+sed -n '1,6p' k8s/gateway.yaml | kubectl apply -f -
+sleep 20
 kubectl apply -f k8s/gateway.yaml
+kubectl get gateway -n retail-store retail-gateway
 ```
 
-Check the Gateway status:
+The Gateway gets an address in about two minutes. PROGRAMMED can stay Unknown for a while longer while AWS builds the load balancer, which is normal. Get the link:
 
 ```bash
-kubectl get gateway -A
-kubectl describe gateway -n retail-store
+kubectl get gateway -n retail-store retail-gateway \
+  -o jsonpath='http://{.status.addresses[0].value}{"\n"}'
 ```
 
-Wait for AWS to provision the Application Load Balancer and for the Gateway to receive an address.
+Open it in your browser. The store may take a few minutes to start answering. It uses HTTP only, so your browser will say "Not Secure".
 
-### 7. Access the retail store
+9. Open the Argo CD dashboard (optional)
 
-Check the Gateway address:
+You can skip this and use kubectl get applications -n argocd instead. For the dashboard, only allow your own IP, because it's an admin login.
+
+Open checkip.amazonaws.com in your own browser (not CloudShell, which has a different IP). Then in CloudShell:
 
 ```bash
-kubectl get gateway -n retail-store
+MYIP=<the IP from your browser>
+
+kubectl annotate svc argocd-server -n argocd \
+  service.beta.kubernetes.io/aws-load-balancer-scheme=internet-facing \
+  service.beta.kubernetes.io/aws-load-balancer-nlb-target-type=ip --overwrite
+```
+```
+kubectl patch svc argocd-server -n argocd \
+  -p "{\"spec\":{\"type\":\"LoadBalancer\",\"loadBalancerClass\":\"eks.amazonaws.com/nlb\",\"loadBalancerSourceRanges\":[\"${MYIP}/32\"]}}"
+```
+Get the link and the admin password:
+
+```bash
+kubectl get svc argocd-server -n argocd \
+  -o jsonpath='https://{.status.loadBalancer.ingress[0].hostname}{"\n"}'
+kubectl -n argocd get secret argocd-initial-admin-secret \
+  -o jsonpath='{.data.password}' | base64 --decode; echo
 ```
 
-Open the assigned address in your browser once the load balancer is ready.
+<img width="1920" height="1014" alt="Screenshot 2026-11-13 at 6 34 35 PM" src="https://github.com/user-attachments/assets/c4609727-ea62-4c9a-8fd8-be0d5d921012" />
 
 ## Verification
 
@@ -265,6 +297,34 @@ Before deploying:
 Always destroy resources when you finish experimenting.
 
 ## Cleanup
+
+```bash
+kubectl delete -f k8s/gateway.yaml
+
+kubectl delete namespace argocd
+
+kubectl delete namespace retail-store
+```
+
+Wait for the load balancers to be removed:
+
+```bash
+sleep 180
+```
+
+Check the load balancers in the region:
+
+```bash
+aws elbv2 describe-load-balancers \
+  --region ap-south-1 \
+  --query 'LoadBalancers[].LoadBalancerName'
+
+aws elb describe-load-balancers \
+  --region ap-south-1 \
+  --query 'LoadBalancerDescriptions[].LoadBalancerName'
+```
+
+Make sure the load balancers created for this deployment have been removed before destroying the network infrastructure. If anything is still present, investigate it and wait for deletion to finish.
 
 Remove Kubernetes resources and wait for AWS-managed load balancers to be deleted before destroying the underlying network infrastructure.
 
