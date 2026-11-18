@@ -6,8 +6,7 @@
 
 <p align="center">
   <a href="https://github.com/pooja-bhavani/retail-store-eks-auto-mode">New Implementation</a> ·
-  <a href="https://github.com/pooja-bhavani/retail-store-sample-app">Previous Implementation</a> ·
-  <a href="https://github.com/aws-containers/retail-store-sample-app">AWS Original Sample</a>
+  <a href="https://github.com/pooja-bhavani/retail-store-sample-app">Previous Implementation</a> 
 </p>
 
 ---
