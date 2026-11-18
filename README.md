@@ -9,7 +9,6 @@
   <a href="https://github.com/pooja-bhavani/retail-store-sample-app">Previous Implementation</a> 
 </p>
 
-<img width="1927" height="1013" alt="Screenshot 2026-11-12 at 8 28 51 PM" src="https://github.com/user-attachments/assets/550a600a-1cc1-4c38-9305-f1462d1848c0" />
 
 ---
 
@@ -184,6 +183,20 @@ kubectl get nodes
 ```
 
 No resources found is normal. Auto Mode only creates nodes when something needs to run.
+
+Once the Gateway has an address, print the link to your store:
+
+```bash
+kubectl get gateway -n retail-store retail-gateway \
+  -o jsonpath='http://{.status.addresses[0].value}{"\n"}'
+```
+
+Copy the whole line it prints (it starts with `http://`) and open it in your browser. If it prints only `http://`, the load balancer isn't ready yet, so wait a minute and run the command again. The store can also take a few more minutes after the address appears before it answers.
+
+You should see the retail store home page:
+
+<img width="1927" height="1013" alt="Screenshot 2026-11-12 at 8 28 51 PM" src="https://github.com/user-attachments/assets/af7e1b59-2e53-4fa3-b6b1-c9ec30b6c8f9" />
+
 
 5. Turn on Gateway API
 ```bash
