@@ -9,6 +9,7 @@
   <a href="https://github.com/pooja-bhavani/retail-store-sample-app">Previous Implementation</a> 
 </p>
 
+<img width="1920" height="1080" alt="cluster" src="https://github.com/user-attachments/assets/91361a92-83d6-4e00-bcb7-c61fb860a30f" />
 
 ---
 
